@@ -1,208 +1,200 @@
-# **what?**
-# Runs code quality checks, unit tests, and verifies python build on
-# all code commited to the repository. This workflow should not
-# require any secrets since it runs for PRs from forked repos.
-# By default, secrets are not passed to workflows running from
-# a forked repo.
-
-# **why?**
-# Ensure code for dbt meets a certain quality standard.
-
-# **when?**
-# This will run for all PRs, when code is pushed to a release
-# branch, and when manually triggered.
-
 name: Tests and Code Checks
-
-on:
+'on':
   push:
     branches:
-      - "main"
-      - "*.latest"
-  pull_request:
-  workflow_dispatch:
-
+    - main
+    - '*.latest'
+  pull_request: null
+  workflow_dispatch: null
 permissions: read-all
-
-# will cancel previous workflows triggered by the same event and for the same ref for PRs or same SHA otherwise
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ contains(github.event_name, 'pull_request') && github.event.pull_request.head.ref || github.sha }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ contains(github.event_name,
+    'pull_request') && github.event.pull_request.head.ref || github.sha }}
   cancel-in-progress: true
-
 defaults:
   run:
     shell: bash
-
 jobs:
   code-quality:
     name: code-quality
-
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
     steps:
-      - name: Check out the repository
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
+    - name: Check out the repository
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.8'
+    - name: Install python dependencies
+      run: 'sudo apt-get update
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.8'
+        sudo apt-get install libsasl2-dev
 
-      - name: Install python dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install libsasl2-dev
-          python -m pip install --user --upgrade pip
-          python -m pip --version
-          python -m pip install pre-commit
-          pre-commit --version
-          python -m pip install -r requirements.txt
-          python -m pip install -r dev-requirements.txt
-          python -c "import dbt.adapters.spark"
+        python -m pip install --user --upgrade pip
 
-      - name: Run pre-commit hooks
-        run: pre-commit run --all-files --show-diff-on-failure
+        python -m pip --version
 
+        python -m pip install pre-commit
+
+        pre-commit --version
+
+        python -m pip install -r requirements.txt
+
+        python -m pip install -r dev-requirements.txt
+
+        python -c "import dbt.adapters.spark"
+
+        '
+    - name: Run pre-commit hooks
+      run: pre-commit run --all-files --show-diff-on-failure
   unit:
     name: unit test / python ${{ matrix.python-version }}
-
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.8", "3.9", "3.10", "3.11"]
-
+        python-version:
+        - '3.8'
+        - '3.9'
+        - '3.10'
+        - '3.11'
     steps:
-      - name: Check out the repository
-        uses: actions/checkout@v4
+    - name: Check out the repository
+      uses: actions/checkout@v4
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install python dependencies
+      run: 'sudo apt-get update
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
+        sudo apt-get install libsasl2-dev
 
-      - name: Install python dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install libsasl2-dev
-          python -m pip install --user --upgrade pip
-          python -m pip --version
-          python -m pip install -r requirements.txt
-          python -m pip install -r dev-requirements.txt
-          python -m pip install -e .
+        python -m pip install --user --upgrade pip
 
-      - name: Run unit tests
-        run: python -m pytest --color=yes --csv unit_results.csv -v tests/unit
+        python -m pip --version
 
-      - name: Get current date
-        if: always()
-        id: date
-        run: echo "date=$(date +'%Y-%m-%dT%H_%M_%S')" >> $GITHUB_OUTPUT #no colons allowed for artifacts
+        python -m pip install -r requirements.txt
 
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: unit_results_${{ matrix.python-version }}-${{ steps.date.outputs.date }}.csv
-          path: unit_results.csv
-          overwrite: true
+        python -m pip install -r dev-requirements.txt
 
+        python -m pip install -e .
+
+        '
+    - name: Run unit tests
+      run: python -m pytest --color=yes --csv unit_results.csv -v tests/unit
+    - name: Get current date
+      if: always()
+      id: date
+      run: echo "date=$(date +'%Y-%m-%dT%H_%M_%S')" >> $GITHUB_OUTPUT
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: unit_results_${{ matrix.python-version }}-${{ steps.date.outputs.date
+          }}.csv
+        path: unit_results.csv
+        overwrite: true
   build:
     name: build packages
-
     runs-on: ubuntu-latest
-
     outputs:
       is_alpha: ${{ steps.check-is-alpha.outputs.is_alpha }}
-
     steps:
-      - name: Check out the repository
-        uses: actions/checkout@v4
+    - name: Check out the repository
+      uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.8'
+    - name: Install python dependencies
+      run: 'python -m pip install --user --upgrade pip
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.8'
+        python -m pip install --upgrade setuptools wheel twine check-wheel-contents
 
-      - name: Install python dependencies
-        run: |
-          python -m pip install --user --upgrade pip
-          python -m pip install --upgrade setuptools wheel twine check-wheel-contents
-          python -m pip --version
+        python -m pip --version
 
-      - name: Build distributions
-        run: ./scripts/build-dist.sh
+        '
+    - name: Build distributions
+      run: ./scripts/build-dist.sh
+    - name: Show distributions
+      run: ls -lh dist/
+    - name: Check distribution descriptions
+      run: 'twine check dist/*
 
-      - name: Show distributions
-        run: ls -lh dist/
+        '
+    - name: Check wheel contents
+      run: 'check-wheel-contents dist/*.whl --ignore W007,W008
 
-      - name: Check distribution descriptions
-        run: |
-          twine check dist/*
-      - name: Check wheel contents
-        run: |
-          check-wheel-contents dist/*.whl --ignore W007,W008
+        '
+    - name: Check if this is an alpha version
+      id: check-is-alpha
+      run: 'export is_alpha=0
 
-      - name: Check if this is an alpha version
-        id: check-is-alpha
-        run: |
-          export is_alpha=0
-          if [[ "$(ls -lh dist/)" == *"a1"* ]]; then export is_alpha=1; fi
-          echo "is_alpha=$is_alpha" >> $GITHUB_OUTPUT
+        if [[ "$(ls -lh dist/)" == *"a1"* ]]; then export is_alpha=1; fi
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/
-          overwrite: true
+        echo "is_alpha=$is_alpha" >> $GITHUB_OUTPUT
 
+        '
+    - uses: actions/upload-artifact@v4
+      with:
+        name: dist
+        path: dist/
+        overwrite: true
   test-build:
     name: verify packages / python ${{ matrix.python-version }} / ${{ matrix.os }}
-
     if: needs.build.outputs.is_alpha == 0
-
     needs: build
-
     runs-on: ${{ matrix.os }}
-
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-12, windows-latest]
-        python-version: ["3.8", "3.9", "3.10", "3.11"]
-
+        os:
+        - ubuntu-latest
+        - macos-latest
+        - windows-latest
+        python-version:
+        - '3.8'
+        - '3.9'
+        - '3.10'
+        - '3.11'
     steps:
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install python dependencies
+      run: 'python -m pip install --user --upgrade pip
 
-      - name: Install python dependencies
-        run: |
-          python -m pip install --user --upgrade pip
-          python -m pip install --upgrade wheel
-          python -m pip --version
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
+        python -m pip install --upgrade wheel
 
-      - name: Show distributions
-        run: ls -lh dist/
+        python -m pip --version
 
-      - name: Install wheel distributions
-        run: |
-          find ./dist/*.whl -maxdepth 1 -type f | xargs python -m pip install --force-reinstall --find-links=dist/
-      - name: Check wheel distributions
-        run: |
-          python -c "import dbt.adapters.spark"
-      - name: Install source distributions
-        run: |
-          find ./dist/*.gz -maxdepth 1 -type f | xargs python -m pip install --force-reinstall --find-links=dist/
-      - name: Check source distributions
-        run: |
-          python -c "import dbt.adapters.spark"
+        '
+    - uses: actions/download-artifact@v4
+      with:
+        name: dist
+        path: dist/
+    - name: Show distributions
+      run: ls -lh dist/
+    - name: Install wheel distributions
+      run: 'find ./dist/*.whl -maxdepth 1 -type f | xargs python -m pip install --force-reinstall
+        --find-links=dist/
+
+        '
+    - name: Check wheel distributions
+      run: 'python -c "import dbt.adapters.spark"
+
+        '
+    - name: Install source distributions
+      run: 'find ./dist/*.gz -maxdepth 1 -type f | xargs python -m pip install --force-reinstall
+        --find-links=dist/
+
+        '
+    - name: Check source distributions
+      run: 'python -c "import dbt.adapters.spark"
+
+        '
